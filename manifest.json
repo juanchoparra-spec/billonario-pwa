@@ -1,0 +1,17 @@
+{
+  "name": "Billonario - Registro de Operaciones",
+  "short_name": "Billonario",
+  "description": "Aplicación para registrar operaciones: opciones, acciones y deportes",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#D9E6F7",
+  "orientation": "portrait-or-landscape",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}
