@@ -481,6 +481,35 @@ export default function TradeLog() {
     ws["!cols"] = [{ wch: 10 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }];
     XLSX.utils.book_append_sheet(wb, ws, cfg.label);
 
+    // Movements sheet (Abonos / Retiros) with Mes and Año breakdown
+    const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+    const movRows = [...movements[t]]
+      .sort((a, b2) => new Date(a.fecha) - new Date(b2.fecha))
+      .map((m) => {
+        const d = new Date(m.fecha + "T00:00:00");
+        return {
+          Fecha: m.fecha,
+          Mes: isNaN(d) ? "" : MESES[d.getMonth()],
+          "Año": isNaN(d) ? "" : d.getFullYear(),
+          Tipo: m.tipo,
+          "Monto ($)": Number(Number(m.monto).toFixed(2)),
+        };
+      });
+
+    if (movRows.length === 0) {
+      movRows.push({ Fecha: "", Mes: "", "Año": "", Tipo: "", "Monto ($)": "Sin movimientos" });
+    } else {
+      const totalAbonos = movements[t].filter((m) => m.tipo === "Abono").reduce((s, m) => s + Number(m.monto), 0);
+      const totalRetiros = movements[t].filter((m) => m.tipo === "Retiro").reduce((s, m) => s + Number(m.monto), 0);
+      movRows.push({ Fecha: "", Mes: "", "Año": "", Tipo: "", "Monto ($)": "" });
+      movRows.push({ Fecha: "", Mes: "", "Año": "", Tipo: "TOTAL ABONOS", "Monto ($)": Number(totalAbonos.toFixed(2)) });
+      movRows.push({ Fecha: "", Mes: "", "Año": "", Tipo: "TOTAL RETIROS", "Monto ($)": Number(totalRetiros.toFixed(2)) });
+    }
+
+    const wsMov = XLSX.utils.json_to_sheet(movRows);
+    wsMov["!cols"] = [{ wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 16 }, { wch: 14 }];
+    XLSX.utils.book_append_sheet(wb, wsMov, "Movimientos");
+
     const stamp = todayStr();
     XLSX.writeFile(wb, `TradeLog_${cfg.label}_${stamp}.xlsx`);
     setShowExportPicker(false);
