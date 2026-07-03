@@ -427,8 +427,16 @@ export default function TradeLog() {
       });
     }
 
-    // Final summary row with current balance
-    rows.push({
+    // Final summary block
+    const b = balances[t];
+    const closedTrades = trades[t].filter((r) => r.status === "closed");
+    const winTrades = closedTrades.filter((r) => r.pnl > 0);
+    const lossTrades = closedTrades.filter((r) => r.pnl < 0);
+    const gainsTotal = winTrades.reduce((sum, r) => sum + r.pnl, 0);
+    const lossesTotal = lossTrades.reduce((sum, r) => sum + r.pnl, 0);
+    const pnlPct = b.deposited !== 0 ? (b.closedPnl / b.deposited) * 100 : 0;
+
+    const blankRow = {
       Estado: "",
       Resumen: "",
       "Fecha entrada": "",
@@ -437,16 +445,36 @@ export default function TradeLog() {
       "Retribución ($)": "",
       "Ganancia ($)": "",
       "Ganancia (%)": "",
+    };
+
+    rows.push({ ...blankRow });
+    rows.push({
+      ...blankRow,
+      Resumen: "INVERSIÓN BASE",
+      "Ganancia ($)": Number(b.deposited.toFixed(2)),
     });
     rows.push({
-      Estado: "",
+      ...blankRow,
+      Resumen: "GANANCIA TOTAL",
+      "Ganancia ($)": Number(gainsTotal.toFixed(2)),
+      "Ganancia (%)": `${winTrades.length} operaciones`,
+    });
+    rows.push({
+      ...blankRow,
+      Resumen: "PÉRDIDA TOTAL",
+      "Ganancia ($)": Number(lossesTotal.toFixed(2)),
+      "Ganancia (%)": `${lossTrades.length} operaciones`,
+    });
+    rows.push({
+      ...blankRow,
+      Resumen: "GANANCIA / PÉRDIDA NETA (período)",
+      "Ganancia ($)": Number(b.closedPnl.toFixed(2)),
+      "Ganancia (%)": fmtPct(pnlPct),
+    });
+    rows.push({
+      ...blankRow,
       Resumen: "SALDO ACTUAL",
-      "Fecha entrada": "",
-      "Fecha salida": "",
-      "Inversión ($)": "",
-      "Retribución ($)": "",
-      "Ganancia ($)": Number(balances[t].available.toFixed(2)),
-      "Ganancia (%)": "",
+      "Ganancia ($)": Number(b.available.toFixed(2)),
     });
 
     const ws = XLSX.utils.json_to_sheet(rows);
