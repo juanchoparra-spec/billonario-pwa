@@ -166,7 +166,8 @@ export default function TradeLog() {
       const openCost = trades[t]
         .filter((r) => r.status === "open")
         .reduce((sum, r) => sum + r.cost, 0);
-      result[t] = { available: mov + closedPnl - openCost, deposited: mov, closedPnl, openCost };
+      const closedPct = mov !== 0 ? (closedPnl / mov) * 100 : 0;
+      result[t] = { available: mov + closedPnl - openCost, deposited: mov, closedPnl, closedPct, openCost };
     }
     return result;
   }, [trades, movements]);
@@ -688,7 +689,7 @@ export default function TradeLog() {
         </div>
         <div style={styles.balanceItem}>
           <div>
-            <div style={styles.balanceLabel}>P&L cerrado acumulado</div>
+            <div style={styles.balanceLabel}>P&L</div>
             <div
               style={{
                 ...styles.balanceValueSmall,
@@ -696,6 +697,19 @@ export default function TradeLog() {
               }}
             >
               {fmtMoney(balances[activeTab].closedPnl)}
+            </div>
+          </div>
+        </div>
+        <div style={styles.balanceItem}>
+          <div>
+            <div style={styles.balanceLabel}>Porcentaje</div>
+            <div
+              style={{
+                ...styles.balanceValueSmall,
+                color: balances[activeTab].closedPct >= 0 ? THEME.green : THEME.red,
+              }}
+            >
+              {fmtPct(balances[activeTab].closedPct)}
             </div>
           </div>
         </div>
