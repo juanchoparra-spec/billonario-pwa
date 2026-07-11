@@ -27,8 +27,6 @@ const fmtPct = (n) => (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
 
 const todayStr = () => new Date().toISOString().slice(0, 10);
 
-const uid = () => Math.random().toString(36).slice(2, 10);
-
 // ---------- Field configs per asset type ----------
 const FIELD_CONFIG = {
   opciones: {
@@ -38,16 +36,20 @@ const FIELD_CONFIG = {
       { key: "ticker", label: "Ticker", type: "text", placeholder: "AAPL" },
       { key: "tipo", label: "Tipo", type: "select", options: ["Call", "Put"] },
       { key: "strike", label: "Strike", type: "number", placeholder: "0.00" },
+      { key: "strikeComprado", label: "Strike comprado (valor subyacente, opcional)", type: "number", placeholder: "0.00" },
+      { key: "estrategia", label: "Estrategia aplicada", type: "select", options: ["Reversión PM40", "Ruptura Piso del GAP", "Otra"] },
       { key: "contratos", label: "Contratos", type: "number", placeholder: "1" },
-      { key: "prima", label: "Prima pagada (por contrato)", type: "number", placeholder: "0.00" },
+      { key: "prima", label: "Prima pagada (por contrato, en $)", type: "number", placeholder: "8.00" },
       { key: "vencimiento", label: "Vencimiento", type: "date" },
     ],
     closeFields: [
-      { key: "primaCierre", label: "Prima recibida (por contrato)", type: "number", placeholder: "0.00" },
+      { key: "primaCierre", label: "Prima recibida (por contrato, en $)", type: "number", placeholder: "8.00" },
+      { key: "strikeVendido", label: "Strike vendido (opcional)", type: "number", placeholder: "0.00" },
     ],
-    computeOpenCost: (r) => Number(r.prima || 0) * Number(r.contratos || 0) * 100,
-    computeCloseValue: (r) => Number(r.primaCierre || 0) * Number(r.contratos || 0) * 100,
-    summaryLine: (r) => `${r.ticker || "?"} ${r.tipo || ""} ${r.strike || ""} x${r.contratos || 0}`,
+    computeOpenCost: (r) => Number(r.prima || 0) * Number(r.contratos || 0),
+    computeCloseValue: (r) => Number(r.primaCierre || 0) * Number(r.contratos || 0),
+    summaryLine: (r) =>
+      `${r.ticker || "?"} ${r.tipo || ""} ${r.strike || ""} x${r.contratos || 0}${r.estrategia ? " · " + r.estrategia : ""}`,
   },
   acciones: {
     label: "Acciones",
@@ -104,6 +106,7 @@ export default function TradeLog() {
   const [movForm, setMovForm] = useState({ tipo: "Abono", monto: "", fecha: todayStr() });
   const [showMov, setShowMov] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(null); // { kind: 'trade'|'mov', type, id }
+  const [saving, setSaving] = useState(false); // evita doble-clic / envíos duplicados
 
   // ---------- Initial load from Supabase ----------
   useEffect(() => {
@@ -170,12 +173,17 @@ export default function TradeLog() {
 
   // ---------- Handlers ----------
   const handleAddTrade = async () => {
+    if (saving) return;
     const config = FIELD_CONFIG[newType];
     const cost = config.computeOpenCost(form);
-    if (!cost || cost <= 0) return;
+    if (!cost || cost <= 0) {
+      setError("Completa los campos requeridos (el costo calculado debe ser mayor a $0).");
+      return;
+    }
     const fechaEntrada = form.fecha || todayStr();
     const dataPayload = { ...form };
 
+    setSaving(true);
     const { data, error: insertError } = await supabase
       .from("trades")
       .insert({
@@ -191,6 +199,7 @@ export default function TradeLog() {
       })
       .select()
       .single();
+    setSaving(false);
 
     if (insertError) {
       setError(insertError.message);
@@ -214,6 +223,7 @@ export default function TradeLog() {
   };
 
   const handleConfirmClose = async (type) => {
+    if (saving) return;
     const config = FIELD_CONFIG[type];
     const r = trades[type].find((x) => x.id === closingId);
     if (!r) return;
@@ -223,6 +233,7 @@ export default function TradeLog() {
     const pct = r.cost > 0 ? (pnl / r.cost) * 100 : 0;
     const fechaSalida = closeForm.fechaSalida || todayStr();
 
+    setSaving(true);
     const { error: updateError } = await supabase
       .from("trades")
       .update({
@@ -234,6 +245,7 @@ export default function TradeLog() {
         pct,
       })
       .eq("id", closingId);
+    setSaving(false);
 
     if (updateError) {
       setError(updateError.message);
@@ -251,15 +263,21 @@ export default function TradeLog() {
   };
 
   const handleAddMovement = async (type) => {
+    if (saving) return;
     const monto = Number(movForm.monto || 0);
-    if (!monto || monto <= 0) return;
+    if (!monto || monto <= 0) {
+      setError("Ingresa un monto válido mayor a $0.");
+      return;
+    }
     const fecha = movForm.fecha || todayStr();
 
+    setSaving(true);
     const { data, error: insertError } = await supabase
       .from("movements")
       .insert({ type, tipo: movForm.tipo, monto, fecha })
       .select()
       .single();
+    setSaving(false);
 
     if (insertError) {
       setError(insertError.message);
@@ -282,15 +300,21 @@ export default function TradeLog() {
   };
 
   const handleSaveEditOpen = async () => {
+    if (saving) return;
     const config = FIELD_CONFIG[activeTab];
     const cost = config.computeOpenCost(form);
-    if (!cost || cost <= 0) return;
+    if (!cost || cost <= 0) {
+      setError("Completa los campos requeridos (el costo calculado debe ser mayor a $0).");
+      return;
+    }
     const fechaEntrada = form.fecha || todayStr();
 
+    setSaving(true);
     const { error: updateError } = await supabase
       .from("trades")
       .update({ fecha_entrada: fechaEntrada, data: { ...form }, cost })
       .eq("id", editingOpenId);
+    setSaving(false);
 
     if (updateError) {
       setError(updateError.message);
@@ -319,6 +343,7 @@ export default function TradeLog() {
   };
 
   const handleSaveEditClosed = async (type) => {
+    if (saving) return;
     const config = FIELD_CONFIG[type];
     const r = trades[type].find((x) => x.id === editingClosedId);
     if (!r) return;
@@ -328,10 +353,12 @@ export default function TradeLog() {
     const pct = r.cost > 0 ? (pnl / r.cost) * 100 : 0;
     const fechaSalida = closeForm.fechaSalida || r.fechaSalida;
 
+    setSaving(true);
     const { error: updateError } = await supabase
       .from("trades")
       .update({ data: mergedData, fecha_salida: fechaSalida, close_value: closeValue, pnl, pct })
       .eq("id", editingClosedId);
+    setSaving(false);
 
     if (updateError) {
       setError(updateError.message);
@@ -381,134 +408,78 @@ export default function TradeLog() {
     const wb = XLSX.utils.book_new();
     const cfg = FIELD_CONFIG[t];
     const rows = [];
+    const isOpciones = t === "opciones";
+    const blankRow = () => {
+      const row = { Estado: "", Resumen: "" };
+      if (isOpciones) {
+        row["Strike comprado"] = "";
+        row["Estrategia"] = "";
+      }
+      row["Fecha entrada"] = "";
+      row["Fecha salida"] = "";
+      if (isOpciones) row["Strike vendido"] = "";
+      row["Inversión ($)"] = "";
+      row["Retribución ($)"] = "";
+      row["Ganancia ($)"] = "";
+      row["Ganancia (%)"] = "";
+      return row;
+    };
 
     // Open positions
     trades[t]
       .filter((r) => r.status === "open")
       .forEach((r) => {
-        rows.push({
-          Estado: "Abierta",
-          Resumen: cfg.summaryLine(r.data),
-          "Fecha entrada": r.fechaEntrada,
-          "Fecha salida": "",
-          "Inversión ($)": Number(r.cost.toFixed(2)),
-          "Retribución ($)": "",
-          "Ganancia ($)": "",
-          "Ganancia (%)": "",
-        });
+        const row = blankRow();
+        row.Estado = "Abierta";
+        row.Resumen = cfg.summaryLine(r.data);
+        if (isOpciones) {
+          row["Strike comprado"] = r.data.strikeComprado || "";
+          row["Estrategia"] = r.data.estrategia || "";
+        }
+        row["Fecha entrada"] = r.fechaEntrada;
+        row["Inversión ($)"] = Number(r.cost.toFixed(2));
+        rows.push(row);
       });
 
     // Closed positions
     trades[t]
       .filter((r) => r.status === "closed")
       .forEach((r) => {
-        rows.push({
-          Estado: "Cerrada",
-          Resumen: cfg.summaryLine(r.data),
-          "Fecha entrada": r.fechaEntrada,
-          "Fecha salida": r.fechaSalida,
-          "Inversión ($)": Number(r.cost.toFixed(2)),
-          "Retribución ($)": Number(r.closeValue.toFixed(2)),
-          "Ganancia ($)": Number(r.pnl.toFixed(2)),
-          "Ganancia (%)": Number(r.pct.toFixed(2)),
-        });
+        const row = blankRow();
+        row.Estado = "Cerrada";
+        row.Resumen = cfg.summaryLine(r.data);
+        if (isOpciones) {
+          row["Strike comprado"] = r.data.strikeComprado || "";
+          row["Estrategia"] = r.data.estrategia || "";
+          row["Strike vendido"] = r.data.strikeVendido || "";
+        }
+        row["Fecha entrada"] = r.fechaEntrada;
+        row["Fecha salida"] = r.fechaSalida;
+        row["Inversión ($)"] = Number(r.cost.toFixed(2));
+        row["Retribución ($)"] = Number(r.closeValue.toFixed(2));
+        row["Ganancia ($)"] = Number(r.pnl.toFixed(2));
+        row["Ganancia (%)"] = Number(r.pct.toFixed(2));
+        rows.push(row);
       });
 
     if (rows.length === 0) {
-      rows.push({
-        Estado: "",
-        Resumen: "Sin registros",
-        "Fecha entrada": "",
-        "Fecha salida": "",
-        "Inversión ($)": "",
-        "Retribución ($)": "",
-        "Ganancia ($)": "",
-        "Ganancia (%)": "",
-      });
+      const row = blankRow();
+      row.Resumen = "Sin registros";
+      rows.push(row);
     }
 
-    // Final summary block
-    const b = balances[t];
-    const closedTrades = trades[t].filter((r) => r.status === "closed");
-    const winTrades = closedTrades.filter((r) => r.pnl > 0);
-    const lossTrades = closedTrades.filter((r) => r.pnl < 0);
-    const gainsTotal = winTrades.reduce((sum, r) => sum + r.pnl, 0);
-    const lossesTotal = lossTrades.reduce((sum, r) => sum + r.pnl, 0);
-    const pnlPct = b.deposited !== 0 ? (b.closedPnl / b.deposited) * 100 : 0;
-
-    const blankRow = {
-      Estado: "",
-      Resumen: "",
-      "Fecha entrada": "",
-      "Fecha salida": "",
-      "Inversión ($)": "",
-      "Retribución ($)": "",
-      "Ganancia ($)": "",
-      "Ganancia (%)": "",
-    };
-
-    rows.push({ ...blankRow });
-    rows.push({
-      ...blankRow,
-      Resumen: "INVERSIÓN BASE",
-      "Ganancia ($)": Number(b.deposited.toFixed(2)),
-    });
-    rows.push({
-      ...blankRow,
-      Resumen: "GANANCIA TOTAL",
-      "Ganancia ($)": Number(gainsTotal.toFixed(2)),
-      "Ganancia (%)": `${winTrades.length} operaciones`,
-    });
-    rows.push({
-      ...blankRow,
-      Resumen: "PÉRDIDA TOTAL",
-      "Ganancia ($)": Number(lossesTotal.toFixed(2)),
-      "Ganancia (%)": `${lossTrades.length} operaciones`,
-    });
-    rows.push({
-      ...blankRow,
-      Resumen: "GANANCIA / PÉRDIDA NETA (período)",
-      "Ganancia ($)": Number(b.closedPnl.toFixed(2)),
-      "Ganancia (%)": fmtPct(pnlPct),
-    });
-    rows.push({
-      ...blankRow,
-      Resumen: "SALDO ACTUAL",
-      "Ganancia ($)": Number(b.available.toFixed(2)),
-    });
+    // Final summary row with current balance
+    rows.push(blankRow());
+    const totalRow = blankRow();
+    totalRow.Resumen = "SALDO ACTUAL";
+    totalRow["Ganancia ($)"] = Number(balances[t].available.toFixed(2));
+    rows.push(totalRow);
 
     const ws = XLSX.utils.json_to_sheet(rows);
-    ws["!cols"] = [{ wch: 10 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }];
+    ws["!cols"] = isOpciones
+      ? [{ wch: 10 }, { wch: 40 }, { wch: 14 }, { wch: 20 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }]
+      : [{ wch: 10 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }];
     XLSX.utils.book_append_sheet(wb, ws, cfg.label);
-
-    // Movements sheet (Abonos / Retiros) with Mes and Año breakdown
-    const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-    const movRows = [...movements[t]]
-      .sort((a, b2) => new Date(a.fecha) - new Date(b2.fecha))
-      .map((m) => {
-        const d = new Date(m.fecha + "T00:00:00");
-        return {
-          Fecha: m.fecha,
-          Mes: isNaN(d) ? "" : MESES[d.getMonth()],
-          "Año": isNaN(d) ? "" : d.getFullYear(),
-          Tipo: m.tipo,
-          "Monto ($)": Number(Number(m.monto).toFixed(2)),
-        };
-      });
-
-    if (movRows.length === 0) {
-      movRows.push({ Fecha: "", Mes: "", "Año": "", Tipo: "", "Monto ($)": "Sin movimientos" });
-    } else {
-      const totalAbonos = movements[t].filter((m) => m.tipo === "Abono").reduce((s, m) => s + Number(m.monto), 0);
-      const totalRetiros = movements[t].filter((m) => m.tipo === "Retiro").reduce((s, m) => s + Number(m.monto), 0);
-      movRows.push({ Fecha: "", Mes: "", "Año": "", Tipo: "", "Monto ($)": "" });
-      movRows.push({ Fecha: "", Mes: "", "Año": "", Tipo: "TOTAL ABONOS", "Monto ($)": Number(totalAbonos.toFixed(2)) });
-      movRows.push({ Fecha: "", Mes: "", "Año": "", Tipo: "TOTAL RETIROS", "Monto ($)": Number(totalRetiros.toFixed(2)) });
-    }
-
-    const wsMov = XLSX.utils.json_to_sheet(movRows);
-    wsMov["!cols"] = [{ wch: 14 }, { wch: 14 }, { wch: 10 }, { wch: 16 }, { wch: 14 }];
-    XLSX.utils.book_append_sheet(wb, wsMov, "Movimientos");
 
     const stamp = todayStr();
     XLSX.writeFile(wb, `TradeLog_${cfg.label}_${stamp}.xlsx`);
@@ -615,16 +586,24 @@ export default function TradeLog() {
         </div>
         {editingOpenId ? (
           <div style={styles.closeActions}>
-            <button style={{ ...styles.smallBtn, background: newConfig.accent, flex: 1 }} onClick={handleSaveEditOpen}>
-              <Check size={14} /> Guardar cambios
+            <button
+              style={{ ...styles.smallBtn, background: newConfig.accent, flex: 1, opacity: saving ? 0.6 : 1 }}
+              onClick={handleSaveEditOpen}
+              disabled={saving}
+            >
+              <Check size={14} /> {saving ? "Guardando..." : "Guardar cambios"}
             </button>
-            <button style={styles.smallBtnGhost} onClick={cancelEditOpen}>
+            <button style={styles.smallBtnGhost} onClick={cancelEditOpen} disabled={saving}>
               Cancelar
             </button>
           </div>
         ) : (
-          <button style={{ ...styles.primaryBtn, background: newConfig.accent }} onClick={handleAddTrade}>
-            <Plus size={16} strokeWidth={2.5} /> Registrar posición
+          <button
+            style={{ ...styles.primaryBtn, background: newConfig.accent, opacity: saving ? 0.6 : 1 }}
+            onClick={handleAddTrade}
+            disabled={saving}
+          >
+            <Plus size={16} strokeWidth={2.5} /> {saving ? "Guardando..." : "Registrar posición"}
           </button>
         )}
       </section>
@@ -702,8 +681,12 @@ export default function TradeLog() {
             value={movForm.fecha}
             onChange={(e) => setMovForm({ ...movForm, fecha: e.target.value })}
           />
-          <button style={{ ...styles.primaryBtn, background: config.accent, margin: 0 }} onClick={() => handleAddMovement(activeTab)}>
-            <Check size={16} /> Confirmar
+          <button
+            style={{ ...styles.primaryBtn, background: config.accent, margin: 0, opacity: saving ? 0.6 : 1 }}
+            onClick={() => handleAddMovement(activeTab)}
+            disabled={saving}
+          >
+            <Check size={16} /> {saving ? "Guardando..." : "Confirmar"}
           </button>
         </section>
       )}
@@ -799,10 +782,14 @@ export default function TradeLog() {
                     compact
                   />
                   <div style={styles.closeActions}>
-                    <button style={{ ...styles.smallBtn, background: config.accent }} onClick={() => handleConfirmClose(activeTab)}>
-                      <Check size={14} /> Cerrar posición
+                    <button
+                      style={{ ...styles.smallBtn, background: config.accent, opacity: saving ? 0.6 : 1 }}
+                      onClick={() => handleConfirmClose(activeTab)}
+                      disabled={saving}
+                    >
+                      <Check size={14} /> {saving ? "Guardando..." : "Cerrar posición"}
                     </button>
-                    <button style={styles.smallBtnGhost} onClick={() => setClosingId(null)}>
+                    <button style={styles.smallBtnGhost} onClick={() => setClosingId(null)} disabled={saving}>
                       Cancelar
                     </button>
                   </div>
@@ -884,10 +871,14 @@ export default function TradeLog() {
                     compact
                   />
                   <div style={styles.closeActions}>
-                    <button style={{ ...styles.smallBtn, background: config.accent }} onClick={() => handleSaveEditClosed(activeTab)}>
-                      <Check size={14} /> Guardar cambios
+                    <button
+                      style={{ ...styles.smallBtn, background: config.accent, opacity: saving ? 0.6 : 1 }}
+                      onClick={() => handleSaveEditClosed(activeTab)}
+                      disabled={saving}
+                    >
+                      <Check size={14} /> {saving ? "Guardando..." : "Guardar cambios"}
                     </button>
-                    <button style={styles.smallBtnGhost} onClick={cancelEditClosed}>
+                    <button style={styles.smallBtnGhost} onClick={cancelEditClosed} disabled={saving}>
                       Cancelar
                     </button>
                   </div>
