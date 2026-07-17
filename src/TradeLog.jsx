@@ -36,15 +36,13 @@ const FIELD_CONFIG = {
       { key: "ticker", label: "Ticker", type: "text", placeholder: "AAPL" },
       { key: "tipo", label: "Tipo", type: "select", options: ["Call", "Put"] },
       { key: "strike", label: "Strike", type: "number", placeholder: "0.00" },
-      { key: "strikeComprado", label: "Strike comprado", type: "number", placeholder: "0.00" },
       { key: "estrategia", label: "Estrategia aplicada", type: "text", placeholder: "Ej: Reversión PM40" },
       { key: "contratos", label: "Contratos", type: "number", placeholder: "1" },
-      { key: "prima", label: "Prima pagada (por contrato, en $)", type: "number", placeholder: "0.00" },
+      { key: "prima", label: "Valor contrato", type: "number", placeholder: "0.00" },
       { key: "vencimiento", label: "Vencimiento", type: "date" },
     ],
     closeFields: [
-      { key: "primaCierre", label: "Prima recibida (por contrato, en $)", type: "number", placeholder: "0.00" },
-      { key: "strikeVendido", label: "Strike vendido (opcional)", type: "number", placeholder: "0.00" },
+      { key: "primaCierre", label: "Valor contrato (cierre)", type: "number", placeholder: "0.00" },
     ],
     computeOpenCost: (r) => Number(r.prima || 0) * Number(r.contratos || 0),
     computeCloseValue: (r) => Number(r.primaCierre || 0) * Number(r.contratos || 0),
@@ -411,29 +409,14 @@ export default function TradeLog() {
     const rows = [];
     const isOpciones = t === "opciones";
 
-    // Movimiento del strike, ajustado según Call/Put para que positivo = a tu favor
-    const computeMovimiento = (data) => {
-      const compra = data.strikeComprado;
-      const venta = data.strikeVendido;
-      if (compra === undefined || compra === "" || venta === undefined || venta === "") return "";
-      const c = Number(compra);
-      const v = Number(venta);
-      return data.tipo === "Put" ? Number((c - v).toFixed(2)) : Number((v - c).toFixed(2));
-    };
-
     const blankRow = () => {
       const row = { Estado: "", Resumen: "" };
       row["Fecha entrada"] = "";
       row["Fecha salida"] = "";
-      if (isOpciones) {
-        row["Compra Strike ($)"] = "";
-        row["Venta Strike ($)"] = "";
-        row["Movimiento Strike ($)"] = "";
-      }
       row["Inversión ($)"] = "";
       row["Retribución ($)"] = "";
       row["Ganancia ($)"] = "";
-      row["Ganancia (%)"] = "";
+      row["Porcentaje"] = "";
       if (isOpciones) row["Estrategia"] = "";
       return row;
     };
@@ -446,10 +429,7 @@ export default function TradeLog() {
         row.Estado = isOpciones ? "Pendiente" : "Abierta";
         row.Resumen = cfg.summaryLine(r.data);
         row["Fecha entrada"] = r.fechaEntrada;
-        if (isOpciones) {
-          row["Compra Strike ($)"] = r.data.strikeComprado || "";
-          row["Estrategia"] = r.data.estrategia || "";
-        }
+        if (isOpciones) row["Estrategia"] = r.data.estrategia || "";
         row["Inversión ($)"] = Number(r.cost.toFixed(2));
         rows.push(row);
       });
@@ -463,16 +443,11 @@ export default function TradeLog() {
         row.Resumen = cfg.summaryLine(r.data);
         row["Fecha entrada"] = r.fechaEntrada;
         row["Fecha salida"] = r.fechaSalida;
-        if (isOpciones) {
-          row["Compra Strike ($)"] = r.data.strikeComprado || "";
-          row["Venta Strike ($)"] = r.data.strikeVendido || "";
-          row["Movimiento Strike ($)"] = computeMovimiento(r.data);
-          row["Estrategia"] = r.data.estrategia || "";
-        }
+        if (isOpciones) row["Estrategia"] = r.data.estrategia || "";
         row["Inversión ($)"] = Number(r.cost.toFixed(2));
         row["Retribución ($)"] = Number(r.closeValue.toFixed(2));
         row["Ganancia ($)"] = Number(r.pnl.toFixed(2));
-        row["Ganancia (%)"] = Number(r.pct.toFixed(2));
+        row["Porcentaje"] = `${r.pct.toFixed(2)}%`;
         rows.push(row);
       });
 
@@ -502,19 +477,19 @@ export default function TradeLog() {
     const rowGanTotal = blankRow();
     rowGanTotal.Resumen = "GANANCIA TOTAL";
     rowGanTotal["Ganancia ($)"] = Number(gananciaTotal.toFixed(2));
-    rowGanTotal["Ganancia (%)"] = `${winTrades.length} operaciones`;
+    rowGanTotal["Porcentaje"] = `${winTrades.length} operaciones`;
     rows.push(rowGanTotal);
 
     const rowPerdTotal = blankRow();
     rowPerdTotal.Resumen = "PÉRDIDA TOTAL";
     rowPerdTotal["Ganancia ($)"] = Number(perdidaTotal.toFixed(2));
-    rowPerdTotal["Ganancia (%)"] = `${lossTrades.length} operaciones`;
+    rowPerdTotal["Porcentaje"] = `${lossTrades.length} operaciones`;
     rows.push(rowPerdTotal);
 
     const rowNeta = blankRow();
     rowNeta.Resumen = "GANANCIA / PÉRDIDA NETA (período)";
     rowNeta["Ganancia ($)"] = Number(neta.toFixed(2));
-    rowNeta["Ganancia (%)"] = `${netaPct.toFixed(2)}%`;
+    rowNeta["Porcentaje"] = `${netaPct.toFixed(2)}%`;
     rows.push(rowNeta);
 
     const totalRow = blankRow();
@@ -524,7 +499,7 @@ export default function TradeLog() {
 
     const ws = XLSX.utils.json_to_sheet(rows);
     ws["!cols"] = isOpciones
-      ? [{ wch: 10 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 16 }, { wch: 18 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 18 }]
+      ? [{ wch: 10 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 18 }]
       : [{ wch: 10 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }];
     XLSX.utils.book_append_sheet(wb, ws, cfg.label);
 
@@ -799,11 +774,6 @@ export default function TradeLog() {
                   <div style={styles.cardSub}>
                     Entrada: {r.fechaEntrada} · Capital: <span style={styles.mono}>{fmtMoney(r.cost)}</span>
                   </div>
-                  {r.data.strikeComprado && (
-                    <div style={styles.cardSub}>
-                      Strike comprado: <span style={styles.mono}>{fmtMoney(Number(r.data.strikeComprado))}</span>
-                    </div>
-                  )}
                 </div>
                 <div style={styles.cardIcons}>
                   <button style={styles.iconBtnGhost} onClick={() => startEditOpen(r)} title="Editar">
@@ -884,18 +854,6 @@ export default function TradeLog() {
                   <div style={styles.cardSub}>
                     {r.fechaEntrada} → {r.fechaSalida} · Capital: <span style={styles.mono}>{fmtMoney(r.cost)}</span>
                   </div>
-                  {(r.data.strikeComprado || r.data.strikeVendido) && (
-                    <div style={styles.cardSub}>
-                      Strike:{" "}
-                      <span style={styles.mono}>
-                        {r.data.strikeComprado ? fmtMoney(Number(r.data.strikeComprado)) : "—"}
-                      </span>{" "}
-                      →{" "}
-                      <span style={styles.mono}>
-                        {r.data.strikeVendido ? fmtMoney(Number(r.data.strikeVendido)) : "—"}
-                      </span>
-                    </div>
-                  )}
                 </div>
                 {editingClosedId !== r.id && (
                   <div style={styles.pnlBlock}>
