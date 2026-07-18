@@ -447,7 +447,7 @@ export default function TradeLog() {
         row["Inversión ($)"] = Number(r.cost.toFixed(2));
         row["Retribución ($)"] = Number(r.closeValue.toFixed(2));
         row["Ganancia ($)"] = Number(r.pnl.toFixed(2));
-        row["Porcentaje"] = `${r.pct.toFixed(2)}%`;
+        row["Porcentaje"] = Number(r.pct.toFixed(2));
         rows.push(row);
       });
 
@@ -489,7 +489,7 @@ export default function TradeLog() {
     const rowNeta = blankRow();
     rowNeta.Resumen = "GANANCIA / PÉRDIDA NETA (período)";
     rowNeta["Ganancia ($)"] = Number(neta.toFixed(2));
-    rowNeta["Porcentaje"] = `${netaPct.toFixed(2)}%`;
+    rowNeta["Porcentaje"] = Number(netaPct.toFixed(2));
     rows.push(rowNeta);
 
     const totalRow = blankRow();
@@ -498,6 +498,13 @@ export default function TradeLog() {
     rows.push(totalRow);
 
     const ws = XLSX.utils.json_to_sheet(rows);
+    const pctColIndex = Object.keys(blankRow()).indexOf("Porcentaje");
+    rows.forEach((row, i) => {
+      if (typeof row["Porcentaje"] === "number") {
+        const addr = XLSX.utils.encode_cell({ r: i + 1, c: pctColIndex });
+        if (ws[addr]) ws[addr].z = '0.00"%";-0.00"%"';
+      }
+    });
     ws["!cols"] = isOpciones
       ? [{ wch: 10 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }, { wch: 18 }]
       : [{ wch: 10 }, { wch: 40 }, { wch: 14 }, { wch: 14 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 14 }];
